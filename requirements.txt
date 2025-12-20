@@ -1,0 +1,4 @@
+supabase
+notion
+openai
+python-dotenv
