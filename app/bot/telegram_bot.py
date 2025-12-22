@@ -20,6 +20,13 @@ from app.bot.handlers.memory.memory_handler import (
 from app.bot.handlers.help_handler import handle_help
 from app.bot.handlers.memory.memory_list_handler import handle_list_memories
 
+from app.bot.handlers.finance.finance_handler import (
+    handle_finance_text,
+    handle_finance_confirmation,
+)
+
+
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -27,22 +34,19 @@ logging.basicConfig(
 
 load_dotenv()
 
-router = IntentRouter()
+intent_router = IntentRouter()
 
 
 async def route_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
-    decision = router.route(text)
+    intent = intent_router.route(text)
 
-    if decision["intent"] == "memory":
+    if intent == "finance":
+        await handle_finance_text(update, context)
+    else:
         await handle_memory_text(update, context)
 
-    elif decision["intent"] == "finance":
-        # por enquanto, só feedback
-        await update.message.reply_text(
-            "Módulo financeiro em construção."
-        )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -52,8 +56,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def route_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await handle_memory_text(update, context)
+async def route_message(update, context):
+    text = update.message.text.lower()
+
+    if any(word in text for word in ["r$", "comprei", "paguei", "recebi"]):
+        await handle_finance_text(update, context)
+    else:
+        await handle_memory_text(update, context)
 
 
 def run_bot():
@@ -64,6 +73,14 @@ def run_bot():
 
     app = ApplicationBuilder().token(token).build()
 
+
+    app.add_handler(
+        CallbackQueryHandler(
+            handle_finance_confirmation,
+            pattern=r"^finance:(confirm|cancel)$"
+        ),
+        group=0
+    )   
     # 🔹 CONFIRMAÇÃO DE MEMÓRIA
     app.add_handler(
         CallbackQueryHandler(

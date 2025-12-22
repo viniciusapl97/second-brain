@@ -51,3 +51,13 @@ def format_memory_list(memories: list[dict]) -> str:
 
     return messages.MEMORY_LIST_HEADER + "\n".join(lines)
 
+def format_finance_confirmation(data: dict) -> str:
+    return (
+        f"*Confirme a transação financeira:*\n\n"
+        f"Descrição: {data['description']}\n"
+        f"Valor: R$ {data['amount']:.2f}\n"
+        f"Tipo: {data['transaction_type']}\n"
+        f"Categoria: {data['category']}\n"
+        f"Pagamento: {data['payment_method']}\n"
+        f"Data: {data['transaction_date']}"
+    )

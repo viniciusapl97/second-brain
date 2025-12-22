@@ -1,9 +1,12 @@
-import json
-import os
+from typing import Literal
 from openai import OpenAI
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
+
+
+Intent = Literal["memory", "finance"]
 
 
 class IntentRouter:
@@ -14,50 +17,39 @@ class IntentRouter:
     MODEL = "gpt-4o-mini"
 
     SYSTEM_PROMPT = """
-Você é um classificador de intenção.
+Você é um classificador de intenções.
 
-Classifique a mensagem do usuário em UM dos seguintes domínios:
+Classifique a mensagem do usuário em UMA das opções abaixo:
 
-- "memory": anotações, ideias, reflexões, lembretes, pensamentos pessoais
-- "finance": gastos, compras, pagamentos, salários, entradas ou saídas de dinheiro,
-             cartões, pix, débito, crédito, parcelas, faturas
+- memory → anotações, ideias, reflexões, lembretes
+- finance → gastos, pagamentos, salários, compras, dinheiro
 
-Regras:
-- Responda APENAS com JSON válido
-- Nunca explique nada
-- Nunca inclua texto fora do JSON
-- Sempre use letras minúsculas
-
-Formato obrigatório:
-{
-  "intent": "memory | finance",
-  "confidence": number entre 0 e 1
-}
+Responda APENAS com uma dessas palavras:
+memory
+finance
 """
 
     def __init__(self):
         api_key = os.getenv("OPENAI_API_KEY")
-
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is not set")
+            raise RuntimeError("OPENAI_API_KEY not set")
 
         self.client = OpenAI(api_key=api_key)
 
-    def route(self, text: str) -> dict:
+    def route(self, text: str) -> Intent:
         response = self.client.chat.completions.create(
             model=self.MODEL,
             messages=[
                 {"role": "system", "content": self.SYSTEM_PROMPT},
                 {"role": "user", "content": text},
             ],
-            temperature=0,
+            temperature=0
         )
 
-        raw = response.choices[0].message.content.strip()
-        parsed = json.loads(raw)
+        intent = response.choices[0].message.content.strip().lower()
 
-        # validação mínima
-        if parsed["intent"] not in {"memory", "finance"}:
-            raise ValueError("Invalid intent returned by router")
+        if intent not in ("memory", "finance"):
+            # fallback seguro
+            return "memory"
 
-        return parsed
+        return intent
