@@ -19,7 +19,7 @@ from app.bot.handlers.memory.memory_handler import (
 )
 from app.bot.handlers.help_handler import handle_help
 from app.bot.handlers.memory.memory_list_handler import handle_list_memories
-
+from app.bot.handlers.finance.finance_resync_handler import handle_resync_notion
 from app.bot.handlers.finance.finance_handler import (
     handle_finance_text,
     handle_finance_confirmation,
@@ -93,7 +93,7 @@ def run_bot():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", handle_help))
     app.add_handler(CommandHandler("ultimas", handle_list_memories))
-
+    app.add_handler(CommandHandler("resync_notion", handle_resync_notion))
     # 🔹 TEXTO LIVRE
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, route_message)
