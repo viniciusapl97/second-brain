@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from typing import Dict
 from dotenv import load_dotenv
-from openai import OpenAI, RateLimitError
+from openai import OpenAI
 
 load_dotenv()
 
@@ -11,7 +11,7 @@ load_dotenv()
 class FinanceParser:
     """
     Interpreta mensagens financeiras em português (PT-BR)
-    e converte em dados estruturados para registro financeiro.
+    e converte em dados estruturados (SEM regras de negócio).
     """
 
     MODEL = "gpt-4o-mini"
@@ -44,15 +44,6 @@ Regras IMPORTANTES:
 - Se não houver parcelamento, use null em installments_total
 - Se não houver conta/cartão claro, use null em account
 - Se não houver data explícita, use a data de hoje
-- transaction_type:
-  - "expense" para gastos
-  - "income" para entradas de dinheiro
-- payment_method deve ser um dos valores permitidos
-- category deve ser simples (ex: Alimentação, Transporte, Salário)
-Exemplos importantes:
-- "Recebi meu salário de R$4500" → transaction_type = "income"
-- "Caiu o pagamento do freelance" → transaction_type = "income"
-- "Ganhei 200 reais" → transaction_type = "income"
 """
 
     def __init__(self):
@@ -77,99 +68,68 @@ Exemplos importantes:
             raw = response.choices[0].message.content.strip()
             parsed = json.loads(raw)
 
-            # 🔑 ORDEM CORRETA
             parsed = self._normalize(parsed)
-            self._validate(parsed)
 
             return parsed
 
         except Exception as e:
-            # DEBUG TEMPORÁRIO (IMPORTANTE)
             print("⚠️ FinanceParser fallback:", e)
             return self._fallback(text)
+
+    # =====================
+    # INTERNAL
+    # =====================
 
     def _fallback(self, text: str) -> Dict:
         return {
             "module": "finance",
             "description": text[:60],
-            "amount": 0,
-            "transaction_type": "expense",  # default conservador
+            "amount": None,
+            "transaction_type": "expense",
             "category": "Outros",
-            "payment_method": "cash",
+            "payment_method": None,
             "account": None,
             "installments_total": None,
             "transaction_date": datetime.now().strftime("%Y-%m-%d"),
-            "needs_review": True  # 👈 ADIÇÃO IMPORTANTE
+            "needs_review": True,
         }
 
     def _normalize(self, data: Dict) -> Dict:
-        desc = data.get("description", "").lower()
+        data["needs_review"] = False
+
+        # 🔹 normaliza amount
+        try:
+            data["amount"] = float(data.get("amount"))
+        except Exception:
+            data["amount"] = None
+            data["needs_review"] = True
 
         # 🔹 normaliza transaction_type
         if data.get("transaction_type") not in {"income", "expense"}:
-            if any(word in desc for word in ["recebi", "salário", "ganhei", "pagamento"]):
-                data["transaction_type"] = "income"
-            else:
-                data["transaction_type"] = "expense"
+            data["transaction_type"] = "expense"
+            data["needs_review"] = True
 
-        # 🔹 normaliza payment_method
+        # 🔹 normaliza payment_method (apenas mapeia, não valida)
         payment_map = {
             "credito": "credit",
             "crédito": "credit",
+            "debito": "debit",
             "débito": "debit",
             "pix": "pix",
+            "dinheiro": "cash",
             "transferencia": "transfer",
             "transferência": "transfer",
             "deposito": "transfer",
             "depósito": "transfer",
             "salario": "transfer",
             "salário": "transfer",
-            "bank transfer": "transfer",
         }
 
         pm = data.get("payment_method")
         if isinstance(pm, str):
             pm_norm = pm.lower().strip()
             data["payment_method"] = payment_map.get(pm_norm, pm_norm)
-
-        # 🔹 regra explícita para income
-        if data["transaction_type"] == "income":
-            data["payment_method"] = "transfer"
-
-        # 🔹 normaliza amount
-        try:
-            data["amount"] = float(data["amount"])
-        except Exception:
-            data["amount"] = 0
+        else:
+            data["payment_method"] = None
 
         return data
-
-
-
-
-    def _validate(self, data: Dict) -> None:
-        required_keys = {
-            "module",
-            "description",
-            "amount",
-            "transaction_type",
-            "category",
-            "payment_method",
-            "account",
-            "installments_total",
-            "transaction_date",
-        }
-
-        if not required_keys.issubset(data.keys()):
-            raise ValueError("Missing required fields")
-
-        if data["module"] != "finance":
-            raise ValueError("Invalid module")
-
-        if data["transaction_type"] not in {"income", "expense"}:
-            raise ValueError("Invalid transaction_type")
-
-        if data["payment_method"] not in {
-            "credit", "debit", "pix", "cash", "transfer"
-        }:
-            raise ValueError("Invalid payment_method")
