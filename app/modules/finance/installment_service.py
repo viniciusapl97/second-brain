@@ -7,28 +7,34 @@ import uuid
 class InstallmentService:
     @staticmethod
     def generate_installments(
-        transaction: Dict,
-        start_due_date: date
+        *,
+        total_amount: float,
+        installments: int,
+        description: str,
+        category: str | None,
+        start_due_date: date,
+        transaction_type: str,  # "expense" | "income"
     ) -> List[Dict]:
-        total = transaction["installments_total"]
-        amount_per_installment = round(
-            transaction["amount"] / total, 2
-        )
+        if installments < 2:
+            raise ValueError("Parcelamento deve ter no mínimo 2 parcelas")
 
-        installments = []
+        amount_per_installment = round(total_amount / installments, 2)
 
-        for i in range(1, total + 1):
+        generated = []
+
+        for i in range(1, installments + 1):
             due_date = start_due_date + relativedelta(months=i - 1)
 
-            installment = {
-                **transaction,
-                "id": str(uuid.uuid4()),  # 🔑 ID ÚNICO
+            generated.append({
+                "id": str(uuid.uuid4()),
                 "amount": amount_per_installment,
+                "description": description,
+                "category": category,
+                "type": transaction_type,
                 "is_installment": True,
                 "installment_number": i,
-                "due_date": due_date.isoformat(),
-            }
+                "installments_total": installments,
+                "due_date": due_date,
+            })
 
-            installments.append(installment)
-
-        return installments
+        return generated
