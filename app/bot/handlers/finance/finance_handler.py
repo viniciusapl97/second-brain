@@ -1,35 +1,35 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from datetime import date
 import logging
-import uuid
+from datetime import date
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.ai.finance_parser import FinanceParser
+from app.modules.finance.finance_service import FinanceService
 from app.modules.finance.repository import FinanceRepository
 from app.modules.finance.installment_service import InstallmentService
 from app.modules.finance.notion_sync_service import FinanceNotionSyncService
 
-from app.bot.messages import (
-    GENERAL_ERROR,
-    GENERAL_CANCELLED,
-)
+from app.bot.messages import GENERAL_ERROR, GENERAL_CANCELLED
 from app.bot.formatters import format_finance_confirmation
-
 
 logger = logging.getLogger(__name__)
 
 
+def _build_finance_service() -> FinanceService:
+    return FinanceService(
+        repository=FinanceRepository(),
+        installment_service=InstallmentService(),
+        notion_sync_service=FinanceNotionSyncService(),
+    )
+
+
 async def handle_finance_text(update, context):
-    """
-    Recebe mensagem financeira, usa o FinanceParser
-    e pede confirmação antes de salvar.
-    """
     text = update.message.text
 
     try:
         parser = FinanceParser()
         parsed = parser.parse(text)
 
-        # guarda transação pendente no contexto do usuário
         context.user_data["pending_finance"] = parsed
 
         keyboard = InlineKeyboardMarkup([
@@ -42,18 +42,15 @@ async def handle_finance_text(update, context):
         await update.message.reply_text(
             format_finance_confirmation(parsed),
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
 
-    except Exception as e:
-        logger.exception(e)
+    except Exception:
+        logger.exception("Erro ao interpretar mensagem financeira")
         await update.message.reply_text(GENERAL_ERROR)
 
 
 async def handle_finance_confirmation(update, context):
-    """
-    Trata a confirmação ou cancelamento da transação financeira.
-    """
     query = update.callback_query
     await query.answer()
 
@@ -63,59 +60,50 @@ async def handle_finance_confirmation(update, context):
         await query.edit_message_text(GENERAL_CANCELLED)
         return
 
-    # ❌ Cancelar
     if query.data == "finance:cancel":
         context.user_data.pop("pending_finance", None)
         await query.edit_message_text(GENERAL_CANCELLED)
         return
 
-    # ✅ Confirmar
     if query.data == "finance:confirm":
         try:
-            repo = FinanceRepository()
-            notion_sync = FinanceNotionSyncService()
+            if pending.get("needs_review"):
+                await query.edit_message_text(
+                    "⚠️ Não consegui entender completamente essa transação.\n"
+                    "Por favor, reformule a mensagem com mais detalhes."
+                )
+                return
 
-            # 🔹 FINANCE V2: parcelamento real
-            if pending.get("installments_total"):
-                service = InstallmentService()
+            service = _build_finance_service()
 
-                installments = service.generate_installments(
-                    transaction=pending,
-                    start_due_date=date.today()
+            amount = pending["amount"]
+            if not amount or amount <= 0:
+                raise ValueError("Valor inválido")
+
+            tx_type = pending["transaction_type"]
+
+            if tx_type == "expense":
+                service.add_expense(
+                    amount=amount,
+                    description=pending["description"],
+                    category=pending.get("category"),
+                    due_date=date.fromisoformat(pending["transaction_date"]),
+                    installments=pending.get("installments_total") or 1,
+                )
+            else:
+                service.add_income(
+                    amount=amount,
+                    description=pending["description"],
+                    category=pending.get("category"),
+                    received_date=date.fromisoformat(pending["transaction_date"]),
                 )
 
-                for inst in installments:
-                    # 1️⃣ gera o id e salva no Supabase
-                    pending["id"] = str(uuid.uuid4())
-
-                    repo.create(pending)
-
-                    # 2️⃣ tenta sincronizar com Notion
-                    try:
-                        notion_sync.sync_transaction(inst)
-                    except Exception as e:
-                        logger.error(
-                            f"Erro ao sincronizar parcela {inst.get('id')} com Notion: {e}"
-                        )
-
-            else:
-                # 🔹 transação simples (V1)
-                repo.create(pending)
-
-                try:
-                    notion_sync.sync_transaction(pending)
-                except Exception as e:
-                    logger.error(
-                        f"Erro ao sincronizar transação {pending.get('id')} com Notion: {e}"
-                    )
-
-            # limpa estado
             context.user_data.pop("pending_finance", None)
 
             await query.edit_message_text(
                 "💰 Transação financeira salva com sucesso."
             )
 
-        except Exception as e:
-            logger.exception(e)
+        except Exception:
+            logger.exception("Erro ao salvar transação financeira")
             await query.edit_message_text(GENERAL_ERROR)

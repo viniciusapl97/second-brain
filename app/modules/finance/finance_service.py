@@ -3,7 +3,8 @@ from typing import Optional, List
 
 from app.modules.finance.repository import FinanceRepository
 from app.modules.finance.installment_service import InstallmentService
-from app.modules.finance.notion_sync_service import NotionSyncService
+from app.modules.finance.notion_sync_service import FinanceNotionSyncService
+
 
 
 class FinanceService:
@@ -11,7 +12,7 @@ class FinanceService:
         self,
         repository: FinanceRepository,
         installment_service: InstallmentService,
-        notion_sync_service: Optional[NotionSyncService] = None,
+        notion_sync_service: Optional[FinanceNotionSyncService] = None,
     ):
         self.repository = repository
         self.installment_service = installment_service
